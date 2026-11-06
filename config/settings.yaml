@@ -1,0 +1,12 @@
+# Настройки сбора дайджеста
+days_lookback: 3
+max_pages_per_channel: 3
+
+# Список публичных Telegram-каналов (можно указывать ссылку t.me/..., @username или просто username)
+channels:
+  - https://t.me/machinelearning_ru
+  - https://t.me/data_secrets
+  - https://t.me/data_analysis_ml
+  - https://t.me/machinelearning_interview
+  - https://t.me/ai_machinelearning_big_data
+  - https://t.me/sinecor
