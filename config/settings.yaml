@@ -1,12 +1,31 @@
-# Настройки сбора дайджеста
-days_lookback: 3
-max_pages_per_channel: 3
+# Базовые настройки по умолчанию (применяются, если не переопределены внутри профиля)
+defaults:
+  days_lookback: 3
+  max_pages_per_channel: 3
 
-# Список публичных Telegram-каналов (можно указывать ссылку t.me/..., @username или просто username)
-channels:
-  - https://t.me/machinelearning_ru
-  - https://t.me/data_secrets
-  - https://t.me/data_analysis_ml
-  - https://t.me/machinelearning_interview
-  - https://t.me/ai_machinelearning_big_data
-  - https://t.me/sinecor
+# Тематические профили дайджестов (запускаются через флаг --profile <имя>)
+profiles:
+  ai:
+    description: "Технический дайджест AI/ML"
+    prompt_file: "prompts/ai.yaml"
+    days_lookback: 3
+    max_pages_per_channel: 3
+    channels:
+      - https://t.me/machinelearning_ru
+      - https://t.me/data_secrets
+      - https://t.me/data_analysis_ml
+      - https://t.me/machinelearning_interview
+      - https://t.me/ai_machinelearning_big_data
+      - https://t.me/sinecor
+
+  spb:
+    description: "Дайджест событий, афиши и досуга в Санкт-Петербурге"
+    prompt_file: "prompts/spb.yaml"
+    days_lookback: 5
+    max_pages_per_channel: 3
+    channels:
+      - https://t.me/Timepadru_spb
+      - https://t.me/teatrspb
+      - https://t.me/afishapitera
+      - https://t.me/gopeterburg
+      - https://t.me/LeChat_games
