@@ -12,8 +12,9 @@ import yaml
 
 from src.analyzer import build_digest
 from src.fetcher import USER_AGENT, Post, fetch_channel_posts, normalize_channel_name
-from src.sender import send_telegram_message
+from src.sender import broadcast_digest, get_bot_token, get_env_chat_id
 from src.storage import DEFAULT_STATE_PATH, load_state, save_state, update_state_with_posts
+from src.subscribers import sync_subscribers
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
@@ -172,10 +173,30 @@ def main() -> None:
         print("\n" + "=" * 60)
         return
 
-    send_telegram_message(
-        text=full_digest,
-        chat_id=profile_cfg.get("chat_id"),
-    )
+    bot_token = get_bot_token(args.profile)
+    if not bot_token:
+        raise ValueError(
+            f"Не задан токен бота: укажите TELEGRAM_BOT_TOKEN_{args.profile.upper()} или TELEGRAM_BOT_TOKEN в .env"
+        )
+
+    # Синхронизируем подписчиков (/start, /stop) перед отправкой
+    subscribers = sync_subscribers(bot_token=bot_token, profile=args.profile)
+
+    # Единый список получателей: подписчики + .env + chat_id из settings.yaml (дубликаты убирает broadcast_digest)
+    recipients: list[str | int] = list(subscribers)
+    for extra_chat_id in (get_env_chat_id(args.profile), profile_cfg.get("chat_id")):
+        if extra_chat_id is not None and str(extra_chat_id).strip():
+            recipients.append(str(extra_chat_id).strip())
+
+    # Дедупликация по строковому значению с сохранением порядка
+    recipients = list(dict.fromkeys(str(cid) for cid in recipients))
+    if not recipients:
+        raise ValueError("Нет получателей: нет подписчиков и не задан TELEGRAM_CHAT_ID / chat_id в профиле.")
+
+    stats = broadcast_digest(text=full_digest, chat_ids=recipients, bot_token=bot_token)
+    if stats["success"] == 0:
+        # state.json не обновляем, чтобы посты не были потеряны
+        raise RuntimeError("Дайджест не доставлен ни одному получателю.")
 
     # Обновляем state.json только после успешной отправки в Telegram
     full_state = load_state(DEFAULT_STATE_PATH)
