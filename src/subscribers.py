@@ -96,10 +96,49 @@ def sync_subscribers(
                     if chat_id not in profile_subs:
                         logger.info("Новый подписчик [%s] chat_id: %s", profile, chat_id)
                         profile_subs.add(chat_id)
+                        msg = "✅ Вы успешно подписались на дайджест!"
+                    else:
+                        msg = "✅ Вы уже подписаны на дайджест."
+                    try:
+                        client.post(
+                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                            json={"chat_id": chat_id, "text": msg},
+                        )
+                    except Exception as send_err:
+                        logger.warning("Не удалось отправить ответ на /start в chat_id %s: %s", chat_id, send_err)
+
                 elif text.startswith("/stop"):
                     if chat_id in profile_subs:
                         logger.info("Отписка [%s] chat_id: %s", profile, chat_id)
                         profile_subs.discard(chat_id)
+                        msg = "❌ Вы успешно отписались от дайджеста."
+                    else:
+                        msg = "ℹ️ Вы не были подписаны на дайджест."
+                    try:
+                        client.post(
+                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                            json={"chat_id": chat_id, "text": msg},
+                        )
+                    except Exception as send_err:
+                        logger.warning("Не удалось отправить ответ на /stop в chat_id %s: %s", chat_id, send_err)
+
+                elif text.startswith("/help"):
+                    try:
+                        client.post(
+                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                            json={
+                                "chat_id": chat_id,
+                                "text": (
+                                    "ℹ️ <b>Команды бота:</b>\n"
+                                    "/start — подписаться на дайджест\n"
+                                    "/stop — отписаться от рассылки\n"
+                                    "/help — справка"
+                                ),
+                                "parse_mode": "HTML",
+                            },
+                        )
+                    except Exception as send_err:
+                        logger.warning("Не удалось отправить ответ на /help в chat_id %s: %s", chat_id, send_err)
 
             # Подтверждаем обработанные апдейты через offset
             if max_update_id > 0:

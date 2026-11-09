@@ -129,6 +129,37 @@ def main() -> None:
         len(channels),
     )
 
+    bot_token = get_bot_token(args.profile)
+    recipients: list[str | int] = []
+
+    if not args.dry_run:
+        if not bot_token:
+            raise ValueError(
+                f"Не задан токен бота: укажите TELEGRAM_BOT_TOKEN_{args.profile.upper()} или TELEGRAM_BOT_TOKEN в .env"
+            )
+
+        # Синхронизируем подписчиков (/start, /stop) перед началом сбора и генерации
+        subscribers = sync_subscribers(bot_token=bot_token, profile=args.profile)
+
+        # Единый список получателей: подписчики + .env + chat_id из settings.yaml
+        recipients = list(subscribers)
+        for extra_chat_id in (get_env_chat_id(args.profile), profile_cfg.get("chat_id")):
+            if extra_chat_id is not None and str(extra_chat_id).strip():
+                recipients.append(str(extra_chat_id).strip())
+
+        # Дедупликация по строковому значению с сохранением порядка
+        recipients = list(dict.fromkeys(str(cid) for cid in recipients))
+        if not recipients:
+            raise ValueError(
+                f"Нет получателей для профиля '{args.profile}': "
+                "нет подписчиков (никто не отправил /start) и не задан TELEGRAM_CHAT_ID / chat_id в профиле. "
+                "Сбор постов и обращение к LLM отменены."
+            )
+        logger.info("Подготовлен список получателей дайджеста (%d): %s", len(recipients), recipients)
+    elif bot_token:
+        # В режиме dry-run, если токен есть, синхронизируем подписчиков без обязательного требования их наличия
+        sync_subscribers(bot_token=bot_token, profile=args.profile)
+
     state = {} if args.no_state else load_state(DEFAULT_STATE_PATH)
     all_posts: list[Post] = []
 
@@ -172,26 +203,6 @@ def main() -> None:
         print(full_digest)
         print("\n" + "=" * 60)
         return
-
-    bot_token = get_bot_token(args.profile)
-    if not bot_token:
-        raise ValueError(
-            f"Не задан токен бота: укажите TELEGRAM_BOT_TOKEN_{args.profile.upper()} или TELEGRAM_BOT_TOKEN в .env"
-        )
-
-    # Синхронизируем подписчиков (/start, /stop) перед отправкой
-    subscribers = sync_subscribers(bot_token=bot_token, profile=args.profile)
-
-    # Единый список получателей: подписчики + .env + chat_id из settings.yaml (дубликаты убирает broadcast_digest)
-    recipients: list[str | int] = list(subscribers)
-    for extra_chat_id in (get_env_chat_id(args.profile), profile_cfg.get("chat_id")):
-        if extra_chat_id is not None and str(extra_chat_id).strip():
-            recipients.append(str(extra_chat_id).strip())
-
-    # Дедупликация по строковому значению с сохранением порядка
-    recipients = list(dict.fromkeys(str(cid) for cid in recipients))
-    if not recipients:
-        raise ValueError("Нет получателей: нет подписчиков и не задан TELEGRAM_CHAT_ID / chat_id в профиле.")
 
     stats = broadcast_digest(text=full_digest, chat_ids=recipients, bot_token=bot_token)
     if stats["success"] == 0:
