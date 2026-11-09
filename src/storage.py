@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "data" / "state.json"
+DEFAULT_DIGESTS_DIR = Path(__file__).resolve().parent.parent / "data" / "digests"
 
 
 def load_state(state_path: Path = DEFAULT_STATE_PATH) -> dict[str, int]:
@@ -68,3 +70,41 @@ def save_state(state: dict[str, int], state_path: Path = DEFAULT_STATE_PATH) -> 
     tmp_path.write_text(content, encoding="utf-8")
     tmp_path.replace(state_path)
     logger.info("Состояние успешно сохранено в %s (%d каналов).", state_path, len(state))
+
+
+def save_digest_to_archive(
+    profile: str,
+    text: str,
+    days_lookback: int,
+    posts_count: int = 0,
+    digests_dir: Path = DEFAULT_DIGESTS_DIR,
+) -> Path:
+    """
+    Сохраняет отправленный дайджест в markdown-файл в папку data/digests/.
+    Формат имени: {profile}_digest_{dd}_{mm}_{yyyy}_{days_lookback}_days_before.md
+    """
+    digests_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now()
+    date_str = now.strftime("%d_%m_%Y")
+    base_filename = f"{profile}_digest_{date_str}_{days_lookback}_days_before.md"
+    file_path = digests_dir / base_filename
+
+    # Если файл с таким именем уже существует,
+    # добавляем время, чтобы не перезатереть историю
+    if file_path.exists():
+        time_str = now.strftime("%H%M%S")
+        file_path = digests_dir / f"{profile}_digest_{date_str}_{time_str}_{days_lookback}_days_before.md"
+
+    metadata_header = (
+        f"<!--\n"
+        f"Дата отправки: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Профиль: {profile}\n"
+        f"Глубина поиска: {days_lookback} дн.\n"
+        f"Обработано постов: {posts_count}\n"
+        f"-->\n\n"
+    )
+
+    content = metadata_header + text.strip() + "\n"
+    file_path.write_text(content, encoding="utf-8")
+    logger.info("Дайджест сохранен в архив: %s", file_path)
+    return file_path

@@ -13,7 +13,13 @@ import yaml
 from src.analyzer import build_digest
 from src.fetcher import USER_AGENT, Post, fetch_channel_posts, normalize_channel_name
 from src.sender import broadcast_digest, get_bot_token, get_env_chat_id
-from src.storage import DEFAULT_STATE_PATH, load_state, save_state, update_state_with_posts
+from src.storage import (
+    DEFAULT_STATE_PATH,
+    load_state,
+    save_digest_to_archive,
+    save_state,
+    update_state_with_posts,
+)
 from src.subscribers import sync_subscribers
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -208,6 +214,14 @@ def main() -> None:
     if stats["success"] == 0:
         # state.json не обновляем, чтобы посты не были потеряны
         raise RuntimeError("Дайджест не доставлен ни одному получателю.")
+
+    # Фиксируем отправленный дайджест в архиве data/digests/
+    save_digest_to_archive(
+        profile=args.profile,
+        text=full_digest,
+        days_lookback=days_lookback,
+        posts_count=len(all_posts),
+    )
 
     # Обновляем state.json только после успешной отправки в Telegram
     full_state = load_state(DEFAULT_STATE_PATH)
