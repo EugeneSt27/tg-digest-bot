@@ -93,11 +93,8 @@ def save_state(state: dict[str, int], state_path: Path = DEFAULT_STATE_PATH) -> 
     Атомарно сохраняет словарь состояния в JSON-файл (через временный файл),
     чтобы не повредить данные при внезапном прерывании.
     """
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = state_path.with_suffix(".json.tmp")
     content = json.dumps(state, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-    tmp_path.write_text(content, encoding="utf-8")
-    tmp_path.replace(state_path)
+    atomic_write_text(state_path, content)
     logger.info("Состояние успешно сохранено в %s (%d каналов).", state_path, len(state))
 
 

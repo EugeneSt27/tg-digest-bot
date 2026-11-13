@@ -1,7 +1,7 @@
 # Базовые настройки по умолчанию (применяются, если не переопределены внутри профиля)
 defaults:
   days_lookback: 3
-  max_pages_per_channel: 3
+  max_pages_per_channel: 10
 
 # Тематические профили дайджестов (запускаются через флаг --profile <имя>)
 profiles:
@@ -9,7 +9,7 @@ profiles:
     description: "Технический дайджест AI/ML"
     prompt_file: "prompts/ai.yaml"
     days_lookback: 3
-    max_pages_per_channel: 3
+    max_pages_per_channel: 10
     channels:
       - https://t.me/machinelearning_ru
       - https://t.me/data_secrets
