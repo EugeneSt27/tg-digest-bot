@@ -11,8 +11,9 @@ from typing import Any
 import httpx
 
 from src.cache import get_cached_day_digest, save_day_digest_cache
+from src.logging_config import setup_logging
 from src.pipeline import generate_digest, list_profiles, load_profile_config
-from src.sender import get_bot_token, send_single_chat
+from src.sender import get_bot_token, notify_admin, send_single_chat
 from src.subscribers import (
     add_subscriber,
     build_help_message,
@@ -52,21 +53,6 @@ BOT_COMMANDS = [
 POLL_TIMEOUT_SECONDS = 30
 HTTP_CLIENT_TIMEOUT_SECONDS = 40.0
 RETRY_DELAY_SECONDS = 5.0
-
-
-def setup_logging() -> None:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8")
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)-7s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    # Не засоряем лог каждые 30 секунд URL-ами с токеном при long polling
-    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def parse_args() -> argparse.Namespace:
@@ -242,7 +228,7 @@ def build_and_send_day_digest(
                 bot_token=bot_token,
                 client=send_client,
             )
-    except Exception:
+    except Exception as exc:
         logger.exception("[%s] Ошибка при сборке/отправке дневного дайджеста для chat_id %s", profile, chat_id)
         try:
             with httpx.Client(timeout=15.0) as err_client:
@@ -252,6 +238,12 @@ def build_and_send_day_digest(
                     chat_id,
                     "❌ Не удалось собрать дайджест, попробуйте позже.",
                     parse_mode=None,
+                )
+                notify_admin(
+                    f"⚠️ [bot / {profile}] Ошибка при сборке/отправке /get_day для chat_id {chat_id}:\n"
+                    f"{type(exc).__name__}: {exc}",
+                    bot_token=bot_token,
+                    client=err_client,
                 )
         except Exception:
             logger.exception("[%s] Не удалось отправить сообщение об ошибке в chat_id %s", profile, chat_id)
@@ -396,7 +388,8 @@ def run_polling_loop(
 
 
 def main() -> None:
-    setup_logging()
+    log_path = setup_logging("bot.log")
+    logger.info("Логирование в файл: %s", log_path)
     args = parse_args()
 
     try:

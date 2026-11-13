@@ -5,7 +5,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bot
 from src.cache import get_cache_path, get_cached_day_digest, save_day_digest_cache
@@ -199,6 +199,69 @@ class BotTests(unittest.TestCase):
 
             self.assertIsNone(get_cached_day_digest("ai", 5.0, cache_dir=cdir))
             self.assertEqual(err_msgs, [(333, "❌ Не удалось собрать дайджест, попробуйте позже.")])
+
+    def test_build_and_send_day_digest_notifies_admin_on_error(self) -> None:
+        cfg = {"name": "ai", "description": "AI"}
+        with tempfile.TemporaryDirectory() as tmp:
+            cdir = Path(tmp)
+            with (
+                patch("bot.get_cached_day_digest", lambda p, max_age_hours: get_cached_day_digest(p, max_age_hours, cache_dir=cdir)),
+                patch("bot.generate_digest", side_effect=RuntimeError("Quota exceeded")),
+                patch("bot.send_bot_message"),
+                patch("bot.notify_admin") as mock_notify,
+            ):
+                bot.build_and_send_day_digest(cfg, "tok", 333, 5.0)
+
+            mock_notify.assert_called_once()
+            alert_text = mock_notify.call_args.args[0]
+            self.assertIn("ai", alert_text)
+            self.assertIn("333", alert_text)
+            self.assertIn("Quota exceeded", alert_text)
+
+
+class LoggingAndAlertsTests(unittest.TestCase):
+    def test_setup_logging_writes_to_file(self) -> None:
+        import logging
+        from src.logging_config import setup_logging
+
+        with tempfile.TemporaryDirectory() as tmp:
+            logs_dir = Path(tmp) / "logs"
+            log_path = setup_logging("test_bot.log", logs_dir=logs_dir)
+            test_logger = logging.getLogger("test.logging")
+            test_logger.info("Тестовая запись в лог")
+
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+                handler.close()
+            logging.getLogger().handlers.clear()
+
+            self.assertTrue(log_path.exists())
+            content = log_path.read_text(encoding="utf-8")
+            self.assertIn("Тестовая запись в лог", content)
+
+    def test_notify_admin_skips_when_unset(self) -> None:
+        from src.sender import notify_admin
+
+        with patch("src.sender.get_admin_chat_id", return_value=None):
+            self.assertFalse(notify_admin("alert", bot_token="tok"))
+
+    def test_notify_admin_sends_plain_text_when_set(self) -> None:
+        from src.sender import notify_admin
+
+        mock_resp = MagicMock(is_error=False)
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_resp
+
+        with patch("src.sender.get_admin_chat_id", return_value="999000"):
+            sent = notify_admin("Ошибка LLM", bot_token="tok123", client=mock_client)
+
+        self.assertTrue(sent)
+        mock_client.post.assert_called_once()
+        url, kwargs = mock_client.post.call_args.args[0], mock_client.post.call_args.kwargs
+        self.assertIn("tok123", url)
+        self.assertEqual(kwargs["json"]["chat_id"], "999000")
+        self.assertEqual(kwargs["json"]["text"], "Ошибка LLM")
+        self.assertNotIn("parse_mode", kwargs["json"])
 
 
 if __name__ == "__main__":

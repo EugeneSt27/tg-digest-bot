@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 
+from src.logging_config import setup_logging
 from src.pipeline import generate_digest, load_profile_config
-from src.sender import broadcast_digest, get_bot_token, get_env_chat_id
+from src.sender import broadcast_digest, get_bot_token, get_env_chat_id, notify_admin
 from src.storage import (
     DEFAULT_STATE_PATH,
     load_state,
@@ -16,19 +16,6 @@ from src.storage import (
 from src.subscribers import load_subscribers, sync_subscribers
 
 logger = logging.getLogger("digest")
-
-
-def setup_logging() -> None:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8")
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)-7s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,9 +54,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    setup_logging()
+    setup_logging("digest.log")
     args = parse_args()
 
+    try:
+        _run_digest(args)
+    except Exception as exc:
+        logger.exception("Критическая ошибка при выполнении дайджеста (профиль '%s').", args.profile)
+        if not args.dry_run:
+            notify_admin(
+                f"⚠️ [main / {args.profile}] Ошибка при запуске дайджеста:\n"
+                f"{type(exc).__name__}: {exc}",
+                profile=args.profile,
+            )
+        raise
+
+
+def _run_digest(args: argparse.Namespace) -> None:
     profile_cfg = load_profile_config(args.profile)
     days_lookback: int = args.days if args.days is not None else profile_cfg["days_lookback"]
     channels: list[str] = profile_cfg["channels"]
