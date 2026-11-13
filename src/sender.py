@@ -46,6 +46,13 @@ def get_env_chat_id(profile: Optional[str] = None) -> Optional[str]:
     return val if val else None
 
 
+def get_admin_chat_id() -> Optional[str]:
+    """Возвращает ADMIN_CHAT_ID из .env для сервисных уведомлений об ошибках."""
+    load_dotenv()
+    val = os.getenv("ADMIN_CHAT_ID", "").strip()
+    return val if val else None
+
+
 def split_message(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> list[str]:
     """
     Разбивает длинный текст дайджеста на части не длиннее `max_length` символов.
@@ -210,3 +217,53 @@ def send_telegram_message(
         )
 
     logger.info("Дайджест успешно отправлен в чат %s.", target_chat_id)
+
+
+def notify_admin(
+    text: str,
+    bot_token: Optional[str] = None,
+    profile: Optional[str] = None,
+    client: Optional[httpx.Client] = None,
+) -> bool:
+    """
+    Отправляет короткое уведомление об ошибке администратору (ADMIN_CHAT_ID).
+    Никогда не выбрасывает исключения; возвращает True, если уведомление отправлено.
+    """
+    admin_chat_id = get_admin_chat_id()
+    if not admin_chat_id:
+        return False
+
+    token = (bot_token or get_bot_token(profile)).strip()
+    if not token:
+        logger.warning("ADMIN_CHAT_ID задан, но токен бота не найден — алерт не отправлен.")
+        return False
+
+    safe_text = text.strip()
+    if len(safe_text) > MAX_MESSAGE_LENGTH:
+        safe_text = safe_text[: MAX_MESSAGE_LENGTH - 3] + "..."
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": admin_chat_id,
+        "text": safe_text,
+        "disable_web_page_preview": True,
+    }
+
+    try:
+        if client is not None:
+            resp = client.post(url, json=payload)
+        else:
+            with httpx.Client(timeout=15.0) as local_client:
+                resp = local_client.post(url, json=payload)
+
+        if resp.is_error:
+            logger.warning(
+                "Не удалось отправить алерт админу (%d): %s",
+                resp.status_code,
+                resp.text,
+            )
+            return False
+        return True
+    except Exception as exc:
+        logger.warning("Ошибка при отправке алерта админу: %s", exc)
+        return False
