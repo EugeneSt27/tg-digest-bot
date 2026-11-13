@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -13,6 +16,32 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "data" / "state.json"
 DEFAULT_DIGESTS_DIR = Path(__file__).resolve().parent.parent / "data" / "digests"
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """
+    Атомарно записывает текст в файл через временный .tmp файл и replace().
+    При PermissionError (блокировка файла на Windows) делает 3 повтора с паузой 0.2 с.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
+                tmp_path.replace(path)
+                return
+            except PermissionError:
+                if attempt >= max_retries:
+                    raise
+                time.sleep(0.2)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def load_state(state_path: Path = DEFAULT_STATE_PATH) -> dict[str, int]:
