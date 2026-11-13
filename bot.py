@@ -5,12 +5,14 @@ import logging
 import sys
 import threading
 import time
+from datetime import datetime
 from typing import Any
 
 import httpx
 
-from src.pipeline import list_profiles, load_profile_config
-from src.sender import get_bot_token
+from src.cache import get_cached_day_digest, save_day_digest_cache
+from src.pipeline import generate_digest, list_profiles, load_profile_config
+from src.sender import get_bot_token, send_single_chat
 from src.subscribers import (
     add_subscriber,
     build_help_message,
@@ -19,6 +21,9 @@ from src.subscribers import (
 )
 
 logger = logging.getLogger("digest.bot")
+
+_PROFILE_LOCKS: dict[str, threading.Lock] = {}
+_PROFILE_LOCKS_GUARD = threading.Lock()
 
 GET_DAY_BUTTON = "📅 Дайджест за сегодня"
 ALIASES = {
@@ -189,6 +194,69 @@ def send_bot_message(
         logger.warning("Не удалось отправить сообщение в чат %s: %s", chat_id, exc)
 
 
+def get_profile_lock(profile: str) -> threading.Lock:
+    """Возвращает общий threading.Lock для указанного профиля."""
+    with _PROFILE_LOCKS_GUARD:
+        lock = _PROFILE_LOCKS.get(profile)
+        if lock is None:
+            lock = threading.Lock()
+            _PROFILE_LOCKS[profile] = lock
+        return lock
+
+
+def _format_cached_digest_text(text: str, generated_at: float) -> str:
+    """Добавляет к закэшированному дайджесту время его сборки."""
+    collected_time = datetime.fromtimestamp(generated_at).strftime("%H:%M")
+    return f"{text.rstrip()}\n\n🕒 Собрано в {collected_time}"
+
+
+def build_and_send_day_digest(
+    profile_cfg: dict[str, Any],
+    bot_token: str,
+    chat_id: int,
+    cache_hours: float,
+) -> None:
+    """
+    Собирает дневной дайджест в фоновом потоке под Lock профиля
+    (с повторной проверкой кэша) и отправляет пользователю.
+    """
+    profile = profile_cfg["name"]
+    lock = get_profile_lock(profile)
+
+    try:
+        with lock:
+            cached = get_cached_day_digest(profile, max_age_hours=cache_hours)
+            if cached is not None:
+                logger.info("[%s] Кэш уже собран другим потоком, отправляем chat_id %s.", profile, chat_id)
+                text_to_send = _format_cached_digest_text(cached.text, cached.generated_at)
+            else:
+                logger.info("[%s] Сборка дневного дайджеста (days=1, no_state=True)...", profile)
+                result = generate_digest(profile_cfg, days_lookback=1, no_state=True)
+                save_day_digest_cache(profile, result)
+                text_to_send = result.text
+
+        with httpx.Client(timeout=20.0) as send_client:
+            send_single_chat(
+                text=text_to_send,
+                chat_id=chat_id,
+                bot_token=bot_token,
+                client=send_client,
+            )
+    except Exception:
+        logger.exception("[%s] Ошибка при сборке/отправке дневного дайджеста для chat_id %s", profile, chat_id)
+        try:
+            with httpx.Client(timeout=15.0) as err_client:
+                send_bot_message(
+                    err_client,
+                    bot_token,
+                    chat_id,
+                    "❌ Не удалось собрать дайджест, попробуйте позже.",
+                    parse_mode=None,
+                )
+        except Exception:
+            logger.exception("[%s] Не удалось отправить сообщение об ошибке в chat_id %s", profile, chat_id)
+
+
 def handle_update(
     update: dict[str, Any],
     profile_cfg: dict[str, Any],
@@ -231,13 +299,34 @@ def handle_update(
         return
 
     if command == "get_day":
+        cached = get_cached_day_digest(profile, max_age_hours=cache_hours)
+        if cached is not None:
+            logger.info("[%s] Отправка дневного дайджеста из кэша для chat_id %s.", profile, chat_id)
+            try:
+                send_single_chat(
+                    text=_format_cached_digest_text(cached.text, cached.generated_at),
+                    chat_id=int(chat_id),
+                    bot_token=bot_token,
+                    client=client,
+                )
+            except Exception:
+                logger.exception("[%s] Ошибка отправки дайджеста из кэша в chat_id %s", profile, chat_id)
+            return
+
         send_bot_message(
             client,
             bot_token,
             int(chat_id),
-            "⏳ Обработчик /get_day будет подключен на следующем шаге.",
+            "⏳ Собираю сводку за последние 24 часа, это займёт до 1–2 минут...",
             parse_mode=None,
         )
+        worker = threading.Thread(
+            target=build_and_send_day_digest,
+            args=(profile_cfg, bot_token, int(chat_id), cache_hours),
+            name=f"day-digest-{profile}-{chat_id}",
+            daemon=True,
+        )
+        worker.start()
         return
 
     if text.strip():
