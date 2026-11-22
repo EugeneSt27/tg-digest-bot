@@ -8,7 +8,7 @@ profiles:
   ai:
     description: "Технический дайджест AI/ML"
     prompt_file: "prompts/ai.yaml"
-    days_lookback: 3
+    days_lookback: 2
     max_pages_per_channel: 10
     channels:
       - https://t.me/machinelearning_ru
@@ -32,8 +32,8 @@ profiles:
   spb:
     description: "Дайджест событий, афиши и досуга в Санкт-Петербурге"
     prompt_file: "prompts/spb.yaml"
-    days_lookback: 5
-    max_pages_per_channel: 3
+    days_lookback: 3
+    max_pages_per_channel: 10
     channels:
       - https://t.me/Timepadru_spb
       - https://t.me/sevcableport
