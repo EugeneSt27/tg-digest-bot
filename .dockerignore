@@ -1,0 +1,28 @@
+# Виртуальные окружения и кэш Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Секреты (передаются на VPS через env_file, никогда не попадают в образ)
+.env
+.env.*
+
+# Персистентные данные и логи (монтируются через volumes)
+data/
+logs/
+*.db
+
+# Git, IDE и вспомогательные файлы
+.git/
+.gitignore
+.vscode/
+.claude/
+tests/
+README.md
+restart_bot.ps1
+Dockerfile
+docker-compose.yml
+.dockerignore
