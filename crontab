@@ -1,0 +1,6 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# AI-дайджест: каждый день в 11:30 МСК
+30 11 * * * cd /home/eugene/projects/tg-digest-bot && /usr/bin/flock -n /tmp/digest_ai.lock /usr/bin/docker compose run --rm -T bot python main.py -p ai --no-sync >> /home/eugene/projects/tg-digest-bot/logs/cron_ai.log 2>&1
+# SPB-дайджест: каждые 2 дня в 12:00 МСК
+0 12 */2 * * cd /home/eugene/projects/tg-digest-bot && /usr/bin/flock -n /tmp/digest_spb.lock /usr/bin/docker compose run --rm -T bot python main.py -p spb --no-sync >> /home/eugene/projects/tg-digest-bot/logs/cron_spb.log 2>&1
